@@ -1,0 +1,954 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport"
+    content="initial-scale=1, maximum-scale=1, user-scalable=no, width=device-width, shrink-to-fit=no">
+  <title>Panolens.js panorama loading progress</title>
+
+  <style>
+    html,
+    body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: #000;
+    }
+
+    a:link,
+    a:visited {
+      color: #bdc3c7;
+    }
+
+    .panolens-container .panolens-widget {
+      display: none !important;
+    }
+
+    .credit {
+      position: absolute;
+      text-align: center;
+      width: 100%;
+      padding: 20px 0;
+      color: #fff;
+      z-index: 10;
+    }
+
+    #progress {
+      width: 0;
+      height: 5px;
+      position: absolute;
+      top: 0;
+      background: #fff;
+      -webkit-transition: opacity 0.5s ease;
+      transition: opacity 0.5s ease;
+      z-index: 10;
+    }
+
+    #progress.finish {
+      opacity: 0;
+    }
+
+    #pano-container {
+      width: 100%;
+      height: 100%;
+      /* Занимает 100% высоты окна (или iframe в Tilda) */
+      position: relative;
+      background-color: #000;
+      overflow: hidden;
+    }
+
+    /* ======== ЛЕЙБЛ КОМНАТЫ ======== */
+    #room-label {
+      position: absolute;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.72);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      color: #e0e0e0;
+      padding: 8px 24px;
+      border-radius: 20px;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-size: 14px;
+      font-weight: 500;
+      z-index: 2000;
+      pointer-events: none;
+      white-space: nowrap;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      letter-spacing: 0.2px;
+    }
+
+    #map-toggle-btn {
+      position: fixed;
+      top: 14px;
+      right: 14px;
+      z-index: 2001;
+      background: rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(12px);
+      color: #ccc;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      padding: 8px 16px;
+      font-size: 13px;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      letter-spacing: 0.3px;
+    }
+
+    #map-toggle-btn:hover {
+      background: rgba(50, 50, 60, 0.8);
+      color: #fff;
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+
+    /* ======== ПАНЕЛЬ КАРТЫ ======== */
+    #map-panel {
+      position: fixed;
+      top: 0;
+      right: -430px;
+      width: 410px;
+      height: 100%;
+      background: rgba(18, 18, 24, 0.96);
+      backdrop-filter: blur(24px);
+      z-index: 2000;
+      transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      border-left: 1px solid rgba(255, 255, 255, 0.06);
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+    }
+
+    #map-panel.open {
+      right: 0;
+    }
+
+    .map-header {
+      padding: 20px 22px 14px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-shrink: 0;
+    }
+
+    .map-header h2 {
+      margin: 0;
+      color: #d0d0d0;
+      font-size: 16px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
+
+    .map-close {
+      background: none;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      color: rgba(255, 255, 255, 0.4);
+      width: 30px;
+      height: 30px;
+      border-radius: 6px;
+      font-size: 16px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+    }
+
+    .map-close:hover {
+      color: #fff;
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    /* Вкладки */
+    .floor-tabs {
+      display: flex;
+      padding: 14px 22px 0;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    .floor-tab {
+      flex: 1;
+      padding: 9px;
+      text-align: center;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      color: rgba(255, 255, 255, 0.35);
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      transition: all 0.2s;
+      letter-spacing: 0.3px;
+    }
+
+    .floor-tab:hover {
+      color: rgba(255, 255, 255, 0.6);
+      background: rgba(255, 255, 255, 0.06);
+    }
+
+    .floor-tab.active {
+      color: #7eb8da;
+      background: rgba(126, 184, 218, 0.08);
+      border-color: rgba(126, 184, 218, 0.2);
+    }
+
+    /* Контейнер SVG */
+    .map-body {
+      flex: 1;
+      padding: 18px 22px;
+    }
+
+    .floor-map {
+      display: none;
+    }
+
+    .floor-map.active {
+      display: block;
+    }
+
+    .floor-map svg {
+      width: 100%;
+    }
+
+    /* SVG элементы */
+    .r {
+      fill: rgba(255, 255, 255, 0.04);
+      stroke: rgba(255, 255, 255, 0.14);
+      stroke-width: 1;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .r:hover {
+      fill: rgba(126, 184, 218, 0.08);
+      stroke: rgba(126, 184, 218, 0.35);
+    }
+
+    .r.active {
+      fill: rgba(126, 184, 218, 0.12);
+      stroke: rgba(126, 184, 218, 0.6);
+      stroke-width: 1.5;
+    }
+
+    .cr {
+      fill: rgba(255, 255, 255, 0.02);
+      stroke: rgba(255, 255, 255, 0.08);
+      stroke-width: 0.8;
+      stroke-dasharray: 5 3;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .cr.active {
+      fill: rgba(126, 184, 218, 0.06);
+      stroke: rgba(126, 184, 218, 0.4);
+    }
+
+    .t1 {
+      fill: rgba(255, 255, 255, 0.55);
+      font-size: 9.5px;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      text-anchor: middle;
+      pointer-events: none;
+      font-weight: 500;
+    }
+
+    .t1.active {
+      fill: #7eb8da;
+      font-weight: 600;
+    }
+
+    .t2 {
+      fill: rgba(255, 255, 255, 0.3);
+      font-size: 8.5px;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      text-anchor: middle;
+      pointer-events: none;
+    }
+
+    .t2.active {
+      fill: rgba(126, 184, 218, 0.6);
+    }
+
+    .tn {
+      fill: rgba(255, 255, 255, 0.08);
+      font-size: 24px;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      text-anchor: middle;
+      pointer-events: none;
+      font-weight: 800;
+    }
+
+    .tn.active {
+      fill: rgba(126, 184, 218, 0.2);
+    }
+
+    .tc {
+      fill: rgba(255, 255, 255, 0.25);
+      font-size: 10px;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      text-anchor: middle;
+      pointer-events: none;
+      letter-spacing: 3px;
+      font-weight: 500;
+    }
+
+    .tc.active {
+      fill: #7eb8da;
+    }
+
+    /* Пульс */
+    .yh {
+      display: none;
+    }
+
+    .yh.active {
+      display: block;
+    }
+
+    .pd {
+      fill: #7eb8da;
+    }
+
+    .pr {
+      fill: none;
+      stroke: #7eb8da;
+      stroke-width: 1;
+      animation: p 2.2s ease-out infinite;
+    }
+
+    @keyframes p {
+      0% {
+        r: 4;
+        opacity: 0.8;
+      }
+
+      100% {
+        r: 16;
+        opacity: 0;
+      }
+    }
+
+    /* Соединительные линии */
+    .conn {
+      stroke: rgba(255, 255, 255, 0.06);
+      stroke-width: 0.8;
+      stroke-dasharray: 3 3;
+    }
+
+    /* Легенда */
+    .map-legend {
+      padding: 14px 22px;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+      display: flex;
+      gap: 20px;
+      flex-shrink: 0;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 10px;
+      color: rgba(255, 255, 255, 0.3);
+    }
+
+    .ld {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+    }
+
+    .ld.c1 {
+      background: #7eb8da;
+      box-shadow: 0 0 4px rgba(126, 184, 218, 0.4);
+    }
+
+    .ld.c2 {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+    }
+
+    @media (max-width: 500px) {
+      #map-panel {
+        width: 100%;
+        right: -110%;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <div id="pano-container">
+    <div id="progress"></div>
+    <div id="room-label"></div>
+  </div>
+
+  <button id="map-toggle-btn" onclick="toggleMap()">Карта</button>
+
+  <!-- ======== ПАНЕЛЬ КАРТЫ ======== -->
+  <div id="map-panel">
+    <div class="map-header">
+      <h2>План клиники</h2>
+      <button class="map-close" onclick="toggleMap()">&times;</button>
+    </div>
+
+    <div class="floor-tabs">
+      <div class="floor-tab active" data-floor="1" onclick="switchFloor(1)">1-й этаж</div>
+      <div class="floor-tab" data-floor="2" onclick="switchFloor(2)">2-й этаж</div>
+    </div>
+
+    <div class="map-body">
+
+      <!-- ===== 1-Й ЭТАЖ ===== -->
+      <div class="floor-map active" id="floor1-map">
+        <svg viewBox="0 0 400 270" xmlns="http://www.w3.org/2000/svg">
+          <!-- Каб 1 -->
+          <rect class="r" data-room="cabinet1" x="40" y="12" width="100" height="90" rx="3" />
+          <text class="tn" data-rn="cabinet1" x="90" y="48">1</text>
+          <text class="t1" data-rt="cabinet1" x="90" y="72">Каб. детского</text>
+          <text class="t2" data-rt="cabinet1" x="90" y="83">стоматолога</text>
+          <line class="conn" x1="90" y1="102" x2="90" y2="115" />
+
+          <!-- Каб 2 -->
+          <rect class="r" data-room="cabinet2" x="145" y="12" width="100" height="90" rx="3" />
+          <text class="tn" data-rn="cabinet2" x="195" y="48">2</text>
+          <text class="t1" data-rt="cabinet2" x="195" y="72">Каб. детского</text>
+          <text class="t2" data-rt="cabinet2" x="195" y="83">стоматолога</text>
+          <line class="conn" x1="195" y1="102" x2="195" y2="115" />
+
+          <!-- Каб 3 -->
+          <rect class="r" data-room="cabinet3" x="250" y="12" width="100" height="90" rx="3" />
+          <text class="tn" data-rn="cabinet3" x="300" y="48">3</text>
+          <text class="t1" data-rt="cabinet3" x="300" y="78">Ортодонт</text>
+          <line class="conn" x1="300" y1="102" x2="300" y2="115" />
+
+          <!-- Коридор -->
+          <rect class="cr" data-room="corridor1" x="40" y="115" width="310" height="45" rx="2" />
+          <text class="tc" data-rt="corridor1" x="195" y="142">КОРИДОР</text>
+
+          <!-- Рентген (справа от коридора) -->
+          <rect class="r" data-room="rentgen" x="355" y="115" width="35" height="45" rx="3" />
+          <text class="t1" data-rt="rentgen" x="372" y="134" style="font-size:8px">Рентген</text>
+          <text class="t2" data-rt="rentgen" x="372" y="144" style="font-size:7px">кабинет</text>
+
+          <!-- Лестница -->
+          <rect class="r" data-room="stairs" x="40" y="170" width="80" height="70" rx="3" />
+          <text class="t1" data-rt="stairs" x="80" y="210">Лестница</text>
+          <line class="conn" x1="80" y1="160" x2="80" y2="170" />
+
+          <!-- Ресепшен 1 этаж -->
+          <rect class="r" data-room="reception1" x="130" y="170" width="85" height="70" rx="3" />
+          <text class="t1" data-rt="reception1" x="172" y="205">Ресепшен</text>
+
+          <!-- Пульсы -->
+          <g class="yh" data-you="corridor1">
+            <circle class="pr" cx="195" cy="137" r="4" />
+            <circle class="pd" cx="195" cy="137" r="3" />
+          </g>
+          <g class="yh" data-you="cabinet1">
+            <circle class="pr" cx="90" cy="57" r="4" />
+            <circle class="pd" cx="90" cy="57" r="3" />
+          </g>
+          <g class="yh" data-you="cabinet2">
+            <circle class="pr" cx="195" cy="57" r="4" />
+            <circle class="pd" cx="195" cy="57" r="3" />
+          </g>
+          <g class="yh" data-you="cabinet3">
+            <circle class="pr" cx="300" cy="57" r="4" />
+            <circle class="pd" cx="300" cy="57" r="3" />
+          </g>
+          <g class="yh" data-you="rentgen">
+            <circle class="pr" cx="372" cy="137" r="4" />
+            <circle class="pd" cx="372" cy="137" r="3" />
+          </g>
+          <g class="yh" data-you="stairs">
+            <circle class="pr" cx="80" cy="205" r="4" />
+            <circle class="pd" cx="80" cy="205" r="3" />
+          </g>
+          <g class="yh" data-you="reception1">
+            <circle class="pr" cx="172" cy="205" r="4" />
+            <circle class="pd" cx="172" cy="205" r="3" />
+          </g>
+        </svg>
+      </div>
+
+      <!-- ===== 2-Й ЭТАЖ ===== -->
+      <div class="floor-map" id="floor2-map">
+        <svg viewBox="0 0 380 280" xmlns="http://www.w3.org/2000/svg">
+          <!-- Каб 4 -->
+          <rect class="r" data-room="cabinet4" x="10" y="12" width="65" height="90" rx="3" />
+          <text class="tn" data-rn="cabinet4" x="42" y="45">4</text>
+          <text class="t1" data-rt="cabinet4" x="42" y="72">Хирургия</text>
+          <line class="conn" x1="42" y1="102" x2="42" y2="115" />
+
+          <!-- Каб 5 -->
+          <rect class="r" data-room="cabinet5" x="80" y="12" width="65" height="90" rx="3" />
+          <text class="tn" data-rn="cabinet5" x="112" y="45">5</text>
+          <text class="t1" data-rt="cabinet5" x="112" y="72">Хирургия</text>
+          <line class="conn" x1="112" y1="102" x2="112" y2="115" />
+
+          <!-- Каб 6 -->
+          <rect class="r" data-room="cabinet6" x="150" y="12" width="65" height="90" rx="3" />
+          <text class="tn" data-rn="cabinet6" x="182" y="45">6</text>
+          <text class="t1" data-rt="cabinet6" x="182" y="72">Терапия</text>
+          <line class="conn" x1="182" y1="102" x2="182" y2="115" />
+
+          <!-- Каб 7 -->
+          <rect class="r" data-room="cabinet7" x="220" y="12" width="70" height="90" rx="3" style="opacity:0.35" />
+          <text class="tn" data-rn="cabinet7" x="255" y="45" style="opacity:0.2">7</text>
+          <text class="t1" data-rt="cabinet7" x="255" y="68" style="opacity:0.35">Орто-</text>
+          <text class="t2" data-rt="cabinet7" x="255" y="80" style="opacity:0.35">педия</text>
+          <line class="conn" x1="255" y1="102" x2="255" y2="115" />
+
+          <!-- Каб 8 -->
+          <rect class="r" data-room="cabinet8" x="295" y="12" width="70" height="90" rx="3" />
+          <text class="tn" data-rn="cabinet8" x="330" y="45">8</text>
+          <text class="t1" data-rt="cabinet8" x="330" y="68">Орто-</text>
+          <text class="t2" data-rt="cabinet8" x="330" y="80">педия</text>
+          <line class="conn" x1="330" y1="102" x2="330" y2="115" />
+
+          <!-- Коридор: 2 сегмента -->
+          <rect class="cr" data-room="corridor2_start" x="10" y="115" width="175" height="42" rx="2" />
+          <text class="tc" data-rt="corridor2_start" x="97" y="140"
+            style="font-size:9px;letter-spacing:2px">КОРИДОР</text>
+
+          <rect class="cr" data-room="corridor2_mid" x="190" y="115" width="175" height="42" rx="2" />
+          <text class="tc" data-rt="corridor2_mid" x="277" y="140"
+            style="font-size:9px;letter-spacing:2px">КОРИДОР</text>
+
+          <!-- Линия между сегментами -->
+          <line x1="185" y1="125" x2="190" y2="125" style="stroke:rgba(255,255,255,0.1);stroke-width:0.5" />
+          <line x1="185" y1="147" x2="190" y2="147" style="stroke:rgba(255,255,255,0.1);stroke-width:0.5" />
+
+          <!-- Лестница (рядом с ресепшен) -->
+          <rect class="r" data-room="stairs" x="10" y="168" width="75" height="70" rx="3" />
+          <text class="t1" data-rt="stairs" x="47" y="205">Лестница</text>
+          <line class="conn" x1="47" y1="157" x2="47" y2="168" />
+
+          <!-- Ресепшен 2 этаж -->
+          <rect class="r" data-room="reception2" x="90" y="168" width="80" height="70" rx="3" />
+          <text class="t1" data-rt="reception2" x="130" y="205">Ресепшен</text>
+          <line class="conn" x1="130" y1="157" x2="130" y2="168" />
+
+          <!-- Стерилизационная -->
+          <rect class="r" data-room="sterilization" x="280" y="168" width="85" height="70" rx="3" />
+          <text class="t1" data-rt="sterilization" x="322" y="200">Стерили-</text>
+          <text class="t2" data-rt="sterilization" x="322" y="212">зационная</text>
+          <line class="conn" x1="322" y1="157" x2="322" y2="168" />
+
+          <!-- Пульсы -->
+          <g class="yh" data-you="corridor2_start">
+            <circle class="pr" cx="97" cy="136" r="4" />
+            <circle class="pd" cx="97" cy="136" r="3" />
+          </g>
+          <g class="yh" data-you="corridor2_mid">
+            <circle class="pr" cx="277" cy="136" r="4" />
+            <circle class="pd" cx="277" cy="136" r="3" />
+          </g>
+          <g class="yh" data-you="cabinet4">
+            <circle class="pr" cx="42" cy="57" r="4" />
+            <circle class="pd" cx="42" cy="57" r="3" />
+          </g>
+          <g class="yh" data-you="cabinet5">
+            <circle class="pr" cx="112" cy="57" r="4" />
+            <circle class="pd" cx="112" cy="57" r="3" />
+          </g>
+          <g class="yh" data-you="cabinet6">
+            <circle class="pr" cx="182" cy="57" r="4" />
+            <circle class="pd" cx="182" cy="57" r="3" />
+          </g>
+          <g class="yh" data-you="cabinet7">
+            <circle class="pr" cx="255" cy="57" r="4" />
+            <circle class="pd" cx="255" cy="57" r="3" />
+          </g>
+          <g class="yh" data-you="cabinet8">
+            <circle class="pr" cx="330" cy="57" r="4" />
+            <circle class="pd" cx="330" cy="57" r="3" />
+          </g>
+          <g class="yh" data-you="stairs">
+            <circle class="pr" cx="47" cy="203" r="4" />
+            <circle class="pd" cx="47" cy="203" r="3" />
+          </g>
+          <g class="yh" data-you="reception2">
+            <circle class="pr" cx="130" cy="203" r="4" />
+            <circle class="pd" cx="130" cy="203" r="3" />
+          </g>
+          <g class="yh" data-you="sterilization">
+            <circle class="pr" cx="322" cy="203" r="4" />
+            <circle class="pd" cx="322" cy="203" r="3" />
+          </g>
+        </svg>
+      </div>
+
+    </div>
+
+    <div class="map-legend">
+      <div class="legend-item">
+        <div class="ld c1"></div>Вы здесь
+      </div>
+      <div class="legend-item">
+        <div class="ld c2"></div>Кликните для перехода
+      </div>
+    </div>
+  </div>
+
+  <script src="./THREE.JS"></script>
+  <script src="./THREE2.JS"></script>
+
+  <script>
+
+    var panorama, panorama2, panorama3, panorama4, panorama5, panorama6;
+    var panorama7, panorama8, panorama9, panorama10, panorama11, panorama12, panorama13;
+    var panorama14, panorama15;
+    var viewer, progress, progressElement;
+
+    progressElement = document.getElementById('progress');
+
+    // ========================================================================
+    // ОБРАБОТЧИК СОБЫТИЯ "enter"
+    // ========================================================================
+    function onEnter(event) {
+      progressElement.style.width = 0;
+      progressElement.classList.remove('finish');
+    }
+
+    // ========================================================================
+    // ОБРАБОТЧИК СОБЫТИЯ "progress"
+    // ========================================================================
+    function onProgress(event) {
+      progress = event.progress.loaded / event.progress.total * 100;
+      progressElement.style.width = progress + '%';
+      if (progress === 100) {
+        progressElement.classList.add('finish');
+      }
+    }
+
+    // ========================================================================
+    // СОЗДАНИЕ ПАНОРАМ (реальные 360-фото)
+    // ========================================================================
+
+    // --- 1-й ЭТАЖ ---
+    // Коридор 1 этажа
+    panorama = new PANOLENS.ImagePanorama('./panoramas/corridor1.jpeg');
+    panorama.addEventListener('progress', onProgress);
+    panorama.addEventListener('enter', onEnter);
+
+    // Каб 1 — Детский стоматолог
+    panorama2 = new PANOLENS.ImagePanorama('./panoramas/cabinet1.jpeg');
+    panorama2.addEventListener('progress', onProgress);
+    panorama2.addEventListener('enter', onEnter);
+
+    // Каб 2 — Детский стоматолог
+    panorama3 = new PANOLENS.ImagePanorama('./panoramas/cabinet2.jpeg');
+    panorama3.addEventListener('progress', onProgress);
+    panorama3.addEventListener('enter', onEnter);
+
+    // Каб 3 — Ортодонт
+    panorama4 = new PANOLENS.ImagePanorama('./panoramas/cabinet3.jpeg');
+    panorama4.addEventListener('progress', onProgress);
+    panorama4.addEventListener('enter', onEnter);
+
+    // Рентген-кабинет
+    panorama5 = new PANOLENS.ImagePanorama('./panoramas/rentgen.jpeg');
+    panorama5.addEventListener('progress', onProgress);
+    panorama5.addEventListener('enter', onEnter);
+
+    // Лестница
+    panorama6 = new PANOLENS.ImagePanorama('./panoramas/stairs.jpeg');
+    panorama6.addEventListener('progress', onProgress);
+    panorama6.addEventListener('enter', onEnter);
+
+    // --- 2-й ЭТАЖ ---
+    // Коридор 2 этажа — начало
+    panorama7 = new PANOLENS.ImagePanorama('./panoramas/corridor2_start.jpeg');
+    panorama7.addEventListener('progress', onProgress);
+    panorama7.addEventListener('enter', onEnter);
+
+    // Коридор 2 этажа — середина
+    panorama8 = new PANOLENS.ImagePanorama('./panoramas/corridor2_mid.jpeg');
+    panorama8.addEventListener('progress', onProgress);
+    panorama8.addEventListener('enter', onEnter);
+
+    // Каб 4 — Хирургия
+    panorama9 = new PANOLENS.ImagePanorama('./panoramas/cabinet4.jpeg');
+    panorama9.addEventListener('progress', onProgress);
+    panorama9.addEventListener('enter', onEnter);
+
+    // Каб 5 — Хирургия
+    panorama10 = new PANOLENS.ImagePanorama('./panoramas/cabinet5.jpeg');
+    panorama10.addEventListener('progress', onProgress);
+    panorama10.addEventListener('enter', onEnter);
+
+    // Каб 6 — Терапия
+    panorama11 = new PANOLENS.ImagePanorama('./panoramas/cabinet6.jpeg');
+    panorama11.addEventListener('progress', onProgress);
+    panorama11.addEventListener('enter', onEnter);
+
+    // Каб 8 — Ортопедия
+    panorama12 = new PANOLENS.ImagePanorama('./panoramas/cabinet8.jpeg');
+    panorama12.addEventListener('progress', onProgress);
+    panorama12.addEventListener('enter', onEnter);
+
+    // Стерилизационная
+    panorama13 = new PANOLENS.ImagePanorama('./panoramas/sterilization.jpeg');
+    panorama13.addEventListener('progress', onProgress);
+    panorama13.addEventListener('enter', onEnter);
+
+    // Ресепшен 1 этаж
+    panorama14 = new PANOLENS.ImagePanorama('./panoramas/reception1.jpeg');
+    panorama14.addEventListener('progress', onProgress);
+    panorama14.addEventListener('enter', onEnter);
+
+    // Ресепшен 2 этаж
+    panorama15 = new PANOLENS.ImagePanorama('./panoramas/reception2.jpeg');
+    panorama15.addEventListener('progress', onProgress);
+    panorama15.addEventListener('enter', onEnter);
+
+    // ========================================================================
+    // МАППИНГ ДЛЯ КАРТЫ
+    // ========================================================================
+    var roomMap = {
+      'corridor1': panorama,
+      'cabinet1': panorama2,
+      'cabinet2': panorama3,
+      'cabinet3': panorama4,
+      'rentgen': panorama5,
+      'stairs': panorama6,
+      'corridor2_start': panorama7,
+      'corridor2_mid': panorama8,
+      'cabinet4': panorama9,
+      'cabinet5': panorama10,
+      'cabinet6': panorama11,
+      'cabinet7': null,
+      'cabinet8': panorama12,
+      'sterilization': panorama13,
+      'reception1': panorama14,
+      'reception2': panorama15
+    };
+
+    var roomNames = {};
+    roomNames[panorama.uuid] = 'Коридор — 1-й этаж';
+    roomNames[panorama2.uuid] = 'Каб. 1 — Детский стоматолог';
+    roomNames[panorama3.uuid] = 'Каб. 2 — Детский стоматолог';
+    roomNames[panorama4.uuid] = 'Каб. 3 — Ортодонт';
+    roomNames[panorama5.uuid] = 'Рентген-кабинет';
+    roomNames[panorama6.uuid] = 'Лестница';
+    roomNames[panorama7.uuid] = 'Коридор 2 этажа (начало)';
+    roomNames[panorama8.uuid] = 'Коридор 2 этажа (середина)';
+    roomNames[panorama9.uuid] = 'Каб. 4 — Хирургия';
+    roomNames[panorama10.uuid] = 'Каб. 5 — Хирургия';
+    roomNames[panorama11.uuid] = 'Каб. 6 — Терапия';
+    roomNames[panorama12.uuid] = 'Каб. 8 — Ортопедия';
+    roomNames[panorama13.uuid] = 'Стерилизационная';
+    roomNames[panorama14.uuid] = 'Ресепшен — 1-й этаж';
+    roomNames[panorama15.uuid] = 'Ресепшен — 2-й этаж';
+
+    var uuidToKey = {};
+    uuidToKey[panorama.uuid] = 'corridor1';
+    uuidToKey[panorama2.uuid] = 'cabinet1';
+    uuidToKey[panorama3.uuid] = 'cabinet2';
+    uuidToKey[panorama4.uuid] = 'cabinet3';
+    uuidToKey[panorama5.uuid] = 'rentgen';
+    uuidToKey[panorama6.uuid] = 'stairs';
+    uuidToKey[panorama7.uuid] = 'corridor2_start';
+    uuidToKey[panorama8.uuid] = 'corridor2_mid';
+    uuidToKey[panorama9.uuid] = 'cabinet4';
+    uuidToKey[panorama10.uuid] = 'cabinet5';
+    uuidToKey[panorama11.uuid] = 'cabinet6';
+    uuidToKey[panorama12.uuid] = 'cabinet8';
+    uuidToKey[panorama13.uuid] = 'sterilization';
+    uuidToKey[panorama14.uuid] = 'reception1';
+    uuidToKey[panorama15.uuid] = 'reception2';
+
+    var floor1Rooms = ['corridor1', 'cabinet1', 'cabinet2', 'cabinet3', 'rentgen', 'stairs', 'reception1'];
+    var floor2Rooms = ['corridor2_start', 'corridor2_mid', 'cabinet4', 'cabinet5', 'cabinet6', 'cabinet7', 'cabinet8', 'sterilization', 'reception2'];
+
+    // Обновление лейбла при входе в панораму
+    var allPanos = [panorama, panorama2, panorama3, panorama4, panorama5, panorama6,
+      panorama7, panorama8, panorama9, panorama10, panorama11, panorama12, panorama13,
+      panorama14, panorama15];
+    allPanos.forEach(function (p) {
+      p.addEventListener('enter', function () {
+        document.getElementById('room-label').textContent = roomNames[p.uuid] || '';
+        var key = uuidToKey[p.uuid];
+        if (key) {
+          updateMapHighlight(key);
+          switchFloor(floor2Rooms.indexOf(key) !== -1 ? 2 : 1);
+        }
+      });
+    });
+
+    // ========================================================================
+    // НАСТРОЙКА ПЕРЕХОДОВ (LINKS) МЕЖДУ ПАНОРАМАМИ
+    // ========================================================================
+
+    // 1-Й ЭТАЖ: Коридор → Кабинеты + Ресепшен
+    panorama.link(panorama2, new THREE.Vector3(-1434, 287, 4781));
+    panorama.link(panorama3, new THREE.Vector3(3987, -399, 2990));
+    panorama.link(panorama4, new THREE.Vector3(3788, 325, -3247));
+    panorama.link(panorama5, new THREE.Vector3(3034, 685, -3915));
+    panorama.link(panorama14, new THREE.Vector3(-3997, 200, -2998));
+
+    // 1-Й ЭТАЖ: Кабинеты → Коридор
+    panorama2.link(panorama, new THREE.Vector3(-4743, 0, -1581));
+    panorama3.link(panorama, new THREE.Vector3(-3904, 0, 3123));
+    panorama4.link(panorama, new THREE.Vector3(-3201, 0, 3841));
+    panorama5.link(panorama, new THREE.Vector3(-4991, 299, 0));
+
+    // ЛЕСТНИЦА
+    panorama6.link(panorama15, new THREE.Vector3(4462, 1657, -1530));
+    panorama6.link(panorama, new THREE.Vector3(2593, -2305, 3601));
+
+    // РЕСЕПШЕН 1 этаж
+    panorama14.link(panorama, new THREE.Vector3(4910, -117, -935));
+    panorama14.link(panorama6, new THREE.Vector3(4507, 1352, 1690));
+
+    // РЕСЕПШЕН 2 этаж
+    panorama15.link(panorama7, new THREE.Vector3(2620, -374, 4242));
+    panorama15.link(panorama6, new THREE.Vector3(-4789, -1437, 0));
+
+    // 2-Й ЭТАЖ: Коридор 2 Начало
+    panorama7.link(panorama15, new THREE.Vector3(4924, -615, 615));
+    panorama7.link(panorama8, new THREE.Vector3(-1959, -522, 4571));
+    // panorama7.link(panorama6, new THREE.Vector3(3800, -100, -700)); // Лестница — ОТКЛЮЧЕНО (только через ресепшен)
+    panorama7.link(panorama9, new THREE.Vector3(552, -221, -4965));
+    panorama7.link(panorama10, new THREE.Vector3(-2763, -425, 4145));
+
+    // 2-Й ЭТАЖ: Коридор 2 Середина
+    panorama8.link(panorama7, new THREE.Vector3(-2893, -214, -4072));
+    panorama8.link(panorama11, new THREE.Vector3(-3920, -581, -3049));
+    panorama8.link(panorama12, new THREE.Vector3(1453, -528, 4755));
+    panorama8.link(panorama13, new THREE.Vector3(2947, -295, 4028));
+
+    // 2-Й ЭТАЖ: Кабинеты → Коридор
+    panorama9.link(panorama7, new THREE.Vector3(-4205, -216, 2696));
+    panorama10.link(panorama7, new THREE.Vector3(-4759, -203, 1519));
+    panorama11.link(panorama8, new THREE.Vector3(-3904, 98, -3123));
+    panorama12.link(panorama8, new THREE.Vector3(-3980, -498, 2985));
+    panorama13.link(panorama8, new THREE.Vector3(4816, -292, 1313));
+
+    // ========================================================================
+    // ИНИЦИАЛИЗАЦИЯ ПРОСМОТРЩИКА (VIEWER) И ДОБАВЛЕНИЕ ПАНОРАМ
+    // ========================================================================
+
+    viewer = new PANOLENS.Viewer({
+      container: document.getElementById('pano-container'),
+      cameraFov: 75,
+      controlBar: false, // Отключаем нижнюю панель
+    });
+    viewer.OrbitControls.noZoom = true; // Фиксированный зум на всех панорамах
+
+    // ========================================================================
+    // УМНАЯ ПОДСТРОЙКА НАПРАВЛЕНИЯ КАМЕРЫ ПРИ ПЕРЕХОДЕ
+    // ========================================================================
+    var pendingLookAt = null;
+
+    // Перехватываем клики по стрелкам: запоминаем позицию стрелки как направление взгляда
+    function setupLinkDirection(sourcePano) {
+      sourcePano.addEventListener('load', function () {
+        setTimeout(function () {
+          sourcePano.children.forEach(function (child) {
+            if (child.toPanorama) {
+              child.addEventListener('click', function () {
+                // Позиция стрелки = направление, в котором мы смотрим при нажатии.
+                // В целевой панораме ищем обратную стрелку (стрелку назад к sourcePano).
+                // Если нашли — смотрим в противоположную от неё сторону
+                // (т.е. «в глубину» нового помещения, а не назад).
+                var target = child.toPanorama;
+                var backLink = null;
+                target.children.forEach(function (tc) {
+                  if (tc.toPanorama && tc.toPanorama.uuid === sourcePano.uuid) {
+                    backLink = tc;
+                  }
+                });
+                if (backLink) {
+                  // Смотрим в противоположную от обратной стрелки сторону
+                  pendingLookAt = new THREE.Vector3(
+                    -backLink.position.x,
+                    backLink.position.y,
+                    -backLink.position.z
+                  );
+                } else {
+                  // Нет обратной стрелки — смотрим в ту же сторону, куда нажали
+                  pendingLookAt = new THREE.Vector3(
+                    child.position.x,
+                    child.position.y,
+                    child.position.z
+                  );
+                }
+              });
+            }
+          });
+        }, 500);
+      });
+    }
+
+    allPanos.forEach(function (p) {
+      setupLinkDirection(p);
+      p.addEventListener('enter-fade-start', function () {
+        if (pendingLookAt) {
+          var dir = pendingLookAt;
+          pendingLookAt = null;
+          setTimeout(function () {
+            viewer.tweenControlCenter(dir, 0);
+          }, 50);
+        }
+      });
+    });
+
+    viewer.add(panorama, panorama2, panorama3, panorama4, panorama5, panorama6,
+      panorama7, panorama8, panorama9, panorama10, panorama11, panorama12, panorama13,
+      panorama14, panorama15);
+
+    // ========================================================================
+    // КАРТА — ЛОГИКА
+    // ========================================================================
+
+    function toggleMap() {
+      document.getElementById('map-panel').classList.toggle('open');
+    }
+
+    function switchFloor(num) {
+      document.querySelectorAll('.floor-tab').forEach(function (t) {
+        t.classList.toggle('active', t.getAttribute('data-floor') == num);
+      });
+      document.getElementById('floor1-map').classList.toggle('active', num === 1);
+      document.getElementById('floor2-map').classList.toggle('active', num === 2);
+    }
+
+    function updateMapHighlight(activeKey) {
+      document.querySelectorAll('[data-room]').forEach(function (el) {
+        el.classList.toggle('active', el.getAttribute('data-room') === activeKey);
+      });
+      document.querySelectorAll('.yh').forEach(function (g) {
+        g.style.display = (g.getAttribute('data-you') === activeKey) ? 'block' : 'none';
+      });
+    }
+
+    document.querySelectorAll('[data-room]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        var key = this.getAttribute('data-room');
+        var pano = roomMap[key];
+        if (pano) viewer.setPanorama(pano);
+      });
+    });
+
+    // Начальное состояние
+    document.getElementById('room-label').textContent = 'Коридор — 1-й этаж';
+    updateMapHighlight('corridor1');
+
+
+
+  </script>
+
+</body>
+
+</html>
